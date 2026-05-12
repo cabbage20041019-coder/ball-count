@@ -49,8 +49,9 @@ export default function Home() {
     const formData = new FormData();
     formData.append("file", file);
 
+    
     try {
-      const res = await fetch("http://https://ball-count-backend.onrender.com/count", {
+      const res = await fetch("https://ball-count-backend.onrender.com/count", {
         method: "POST",
         body: formData,
       });
