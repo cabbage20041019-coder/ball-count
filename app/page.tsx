@@ -50,7 +50,7 @@ export default function Home() {
     formData.append("file", file);
 
     try {
-      const res = await fetch("http://localhost:8000/count", {
+      const res = await fetch("http://https://ball-count-backend.onrender.com/count", {
         method: "POST",
         body: formData,
       });
