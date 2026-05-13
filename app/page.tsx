@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface HistoryItem {
   id: string;
@@ -9,8 +9,32 @@ interface HistoryItem {
   count: number;
 }
 
+interface SelectionBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+const PRODUCTION_API_URL = "https://ball-count-backend.onrender.com/count";
+const HISTORY_STORAGE_KEY = "ball_count_history";
+const MIN_SELECTION_SIZE = 12;
+const MIN_RECOMMENDED_ASPECT_RATIO = 0.8;
+const MAX_RECOMMENDED_ASPECT_RATIO = 1.3;
+const MAX_HISTORY_ITEMS = 10;
+const HISTORY_IMAGE_MAX_SIZE = 900;
+const HISTORY_IMAGE_QUALITY = 0.75;
+
+interface ImageGuidance {
+  width: number;
+  height: number;
+  aspectRatio: number;
+  requiresSelection: boolean;
+  message: string;
+}
+
 const loadHistory = () => {
-  const savedHistory = localStorage.getItem("ball_count_history");
+  const savedHistory = localStorage.getItem(HISTORY_STORAGE_KEY);
   if (!savedHistory) return [];
 
   try {
@@ -20,13 +44,85 @@ const loadHistory = () => {
   }
 };
 
+const getApiUrl = () => {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  if (
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+  ) {
+    return "http://localhost:8000/count";
+  }
+
+  return PRODUCTION_API_URL;
+};
+
+const createHistoryImageUrl = (imageUrl: string) => {
+  return new Promise<string>((resolve, reject) => {
+    const image = new Image();
+
+    image.onload = () => {
+      const scale = Math.min(
+        1,
+        HISTORY_IMAGE_MAX_SIZE / Math.max(image.naturalWidth, image.naturalHeight),
+      );
+      const width = Math.max(1, Math.round(image.naturalWidth * scale));
+      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+
+      if (!context) {
+        reject(new Error("履歴画像を作成できませんでした"));
+        return;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      context.drawImage(image, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", HISTORY_IMAGE_QUALITY));
+    };
+
+    image.onerror = () => reject(new Error("履歴画像を読み込めませんでした"));
+    image.src = imageUrl;
+  });
+};
+
+const saveHistoryItems = (items: HistoryItem[]) => {
+  const limitedItems = items.slice(0, MAX_HISTORY_ITEMS);
+
+  for (let itemCount = limitedItems.length; itemCount > 0; itemCount -= 1) {
+    const itemsToSave = limitedItems.slice(0, itemCount);
+
+    try {
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(itemsToSave));
+      return itemsToSave;
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== "QuotaExceededError") {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error("履歴の保存容量が足りません");
+};
+
 export default function Home() {
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const objectUrlRef = useRef<string>("");
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState<string>("");
   const [processedImageUrl, setProcessedImageUrl] = useState<string>("");
   const [count, setCount] = useState<number | "">(""); // 個数を数値で管理
+  const [errorAdjustment, setErrorAdjustment] = useState<number | "">(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [selectedHistory, setSelectedHistory] = useState<HistoryItem | null>(null);
+  const [selection, setSelection] = useState<SelectionBox | null>(null);
+  const [imageGuidance, setImageGuidance] = useState<ImageGuidance | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -36,22 +132,163 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+      }
+    };
+  }, []);
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+    }
+
     const url = URL.createObjectURL(file);
+    objectUrlRef.current = url;
+    setSelectedFile(file);
     setImageUrl(url);
     setProcessedImageUrl("");
     setCount("");
+    setErrorAdjustment(0);
+    setSelection(null);
+    setImageGuidance(null);
+
+    const previewImage = new Image();
+    previewImage.onload = () => {
+      const aspectRatio = previewImage.naturalWidth / previewImage.naturalHeight;
+      const requiresSelection =
+        aspectRatio < MIN_RECOMMENDED_ASPECT_RATIO ||
+        aspectRatio > MAX_RECOMMENDED_ASPECT_RATIO;
+
+      setImageGuidance({
+        width: previewImage.naturalWidth,
+        height: previewImage.naturalHeight,
+        aspectRatio,
+        requiresSelection,
+        message: requiresSelection
+          ? "画像が縦長または横長です。ボールの範囲だけを選択して解析してください。"
+          : "必要に応じてボールの範囲だけを選択できます。",
+      });
+    };
+    previewImage.src = url;
+  };
+
+  const getImagePoint = (e: React.PointerEvent<HTMLDivElement>) => {
+    const image = imageRef.current;
+    if (!image) return null;
+
+    const rect = image.getBoundingClientRect();
+    const x = Math.min(Math.max(e.clientX - rect.left, 0), rect.width);
+    const y = Math.min(Math.max(e.clientY - rect.top, 0), rect.height);
+
+    return { x, y };
+  };
+
+  const handleSelectionStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!imageUrl || isProcessing) return;
+
+    const point = getImagePoint(e);
+    if (!point) return;
+
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragStartRef.current = point;
+    setSelection({ x: point.x, y: point.y, width: 0, height: 0 });
+  };
+
+  const handleSelectionMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStartRef.current) return;
+
+    const point = getImagePoint(e);
+    if (!point) return;
+
+    const start = dragStartRef.current;
+    setSelection({
+      x: Math.min(start.x, point.x),
+      y: Math.min(start.y, point.y),
+      width: Math.abs(point.x - start.x),
+      height: Math.abs(point.y - start.y),
+    });
+  };
+
+  const handleSelectionEnd = () => {
+    dragStartRef.current = null;
+    setSelection((current) => {
+      if (
+        !current ||
+        current.width < MIN_SELECTION_SIZE ||
+        current.height < MIN_SELECTION_SIZE
+      ) {
+        return null;
+      }
+
+      return current;
+    });
+  };
+
+  const createSelectedImageBlob = async () => {
+    if (!selectedFile) return null;
+
+    const image = imageRef.current;
+    if (!image || !selection) return selectedFile;
+
+    const scaleX = image.naturalWidth / image.clientWidth;
+    const scaleY = image.naturalHeight / image.clientHeight;
+    const sourceX = Math.round(selection.x * scaleX);
+    const sourceY = Math.round(selection.y * scaleY);
+    const sourceWidth = Math.round(selection.width * scaleX);
+    const sourceHeight = Math.round(selection.height * scaleY);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = sourceWidth;
+    canvas.height = sourceHeight;
+
+    const context = canvas.getContext("2d");
+    if (!context) return selectedFile;
+
+    context.drawImage(
+      image,
+      sourceX,
+      sourceY,
+      sourceWidth,
+      sourceHeight,
+      0,
+      0,
+      sourceWidth,
+      sourceHeight,
+    );
+
+    return new Promise<Blob | File>((resolve) => {
+      canvas.toBlob(
+        (blob) => resolve(blob ?? selectedFile),
+        selectedFile.type || "image/jpeg",
+        0.92,
+      );
+    });
+  };
+
+  const analyzeImage = async () => {
+    if (!selectedFile) return;
+    if (imageGuidance?.requiresSelection && !selection) {
+      alert("この画像は範囲選択が必要です。ボールの範囲だけをドラッグで選択してください。");
+      return;
+    }
+
     setIsProcessing(true);
 
     const formData = new FormData();
-    formData.append("file", file);
 
-    
     try {
-      const res = await fetch("https://ball-count-backend.onrender.com/count", {
+      const imageBlob = await createSelectedImageBlob();
+      if (!imageBlob) throw new Error("画像を読み込めませんでした");
+
+      formData.append("file", imageBlob, selectedFile.name);
+
+      const res = await fetch(getApiUrl(), {
         method: "POST",
         body: formData,
       });
@@ -61,8 +298,11 @@ export default function Home() {
       const data = await res.json();
       if (data.count !== undefined && data.processed_image) {
         setCount(data.count);
+        setErrorAdjustment(0);
         setProcessedImageUrl(`data:image/jpeg;base64,${data.processed_image}`);
         setImageUrl("");
+        setSelectedFile(null);
+        setSelection(null);
       }
     } catch (error) {
       console.error("Error:", error);
@@ -72,28 +312,38 @@ export default function Home() {
     }
   };
 
+  const requiresSelection = imageGuidance?.requiresSelection ?? false;
+  const canAnalyze = Boolean(selectedFile) && !isProcessing && (!requiresSelection || Boolean(selection));
+  const detectedCount = count === "" ? 0 : Number(count);
+  const adjustmentCount = errorAdjustment === "" ? 0 : Number(errorAdjustment);
+  const totalCount = detectedCount + adjustmentCount;
+
   // 履歴を保存する関数
-  const saveToHistory = () => {
+  const saveToHistory = async () => {
     if (!processedImageUrl || count === "") return;
 
-    const newItem: HistoryItem = {
-      id: Date.now().toString(),
-      timestamp: new Date().toLocaleString("ja-JP"),
-      imageUrl: processedImageUrl,
-      count: Number(count),
-    };
+    try {
+      const newItem: HistoryItem = {
+        id: Date.now().toString(),
+        timestamp: new Date().toLocaleString("ja-JP"),
+        imageUrl: await createHistoryImageUrl(processedImageUrl),
+        count: totalCount,
+      };
 
-    const newHistory = [newItem, ...history];
-    setHistory(newHistory);
-    localStorage.setItem("ball_count_history", JSON.stringify(newHistory));
-    alert("履歴に保存しました！");
+      const savedHistory = saveHistoryItems([newItem, ...history]);
+      setHistory(savedHistory);
+      alert("履歴に保存しました！");
+    } catch (error) {
+      console.error("History save error:", error);
+      alert("履歴の保存容量が足りません。古い履歴を削除してからもう一度保存してください。");
+    }
   };
 
   // 履歴を削除する関数
   const deleteHistory = (id: string) => {
     const newHistory = history.filter((item) => item.id !== id);
     setHistory(newHistory);
-    localStorage.setItem("ball_count_history", JSON.stringify(newHistory));
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(newHistory));
   };
 
   return (
@@ -113,23 +363,119 @@ export default function Home() {
 
         {(imageUrl || processedImageUrl) && (
           <div className="flex flex-col items-center">
-            <img
-              src={processedImageUrl || imageUrl}
-              alt="Result"
-              className="w-full max-h-[500px] object-contain rounded-lg border shadow-inner"
-            />
+            {imageUrl ? (
+              <>
+                <div
+                  className="relative max-w-full touch-none select-none cursor-crosshair overflow-hidden rounded-lg border shadow-inner"
+                  onPointerDown={handleSelectionStart}
+                  onPointerMove={handleSelectionMove}
+                  onPointerUp={handleSelectionEnd}
+                  onPointerCancel={handleSelectionEnd}
+                >
+                  <img
+                    ref={imageRef}
+                    src={imageUrl}
+                    alt="解析する画像"
+                    className="block max-h-[500px] max-w-full object-contain"
+                    draggable={false}
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-black/15" />
+                  {selection && (
+                    <div
+                      className="pointer-events-none absolute border-2 border-blue-500 bg-blue-500/15 shadow-[0_0_0_9999px_rgba(0,0,0,0.28)]"
+                      style={{
+                        left: `${selection.x}px`,
+                        top: `${selection.y}px`,
+                        width: `${selection.width}px`,
+                        height: `${selection.height}px`,
+                      }}
+                    />
+                  )}
+                </div>
+
+                {imageGuidance && (
+                  <div
+                    className={`mt-4 w-full rounded-xl border p-4 text-sm ${
+                      imageGuidance.requiresSelection
+                        ? "border-amber-300 bg-amber-50 text-amber-900"
+                        : "border-blue-200 bg-blue-50 text-blue-900"
+                    }`}
+                  >
+                    <p className="font-bold">{imageGuidance.message}</p>
+                    <p className="mt-1">
+                      画像サイズ: {imageGuidance.width} x {imageGuidance.height} /
+                      縦横比: {imageGuidance.aspectRatio.toFixed(2)}
+                    </p>
+                  </div>
+                )}
+
+                <div className="mt-4 flex w-full flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={analyzeImage}
+                    disabled={!canAnalyze}
+                    className="flex-1 rounded-xl bg-blue-600 px-4 py-3 font-bold text-white shadow-lg transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                  >
+                    {selection
+                      ? "選択範囲を解析する"
+                      : requiresSelection
+                        ? "範囲を選択してください"
+                        : "画像全体を解析する"}
+                  </button>
+                  {selection && (
+                    <button
+                      type="button"
+                      onClick={() => setSelection(null)}
+                      disabled={isProcessing}
+                      className="rounded-xl border border-gray-300 px-4 py-3 font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                    >
+                      選択を解除
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <img
+                src={processedImageUrl}
+                alt="Result"
+                className="w-full max-h-[500px] object-contain rounded-lg border shadow-inner"
+              />
+            )}
 
             {processedImageUrl && (
               <div className="mt-6 w-full flex flex-col items-center gap-4">
-                <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-xl border">
-                  <span className="text-lg font-medium">ボール数：</span>
-                  <input
-                    type="number"
-                    value={count}
-                    onChange={(e) => setCount(e.target.value === "" ? "" : Number(e.target.value))}
-                    className="w-24 text-2xl font-bold text-center border-b-2 border-blue-500 bg-transparent focus:outline-none"
-                  />
-                  <span className="text-lg font-medium">個</span>
+                <div className="grid w-full grid-cols-1 gap-3 rounded-xl border bg-gray-50 p-4 sm:grid-cols-[1fr_auto_1fr_auto_1fr] sm:items-end">
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-bold text-gray-600">検出ボール数</span>
+                    <input
+                      type="number"
+                      value={count}
+                      onChange={(e) => setCount(e.target.value === "" ? "" : Number(e.target.value))}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-center text-2xl font-bold focus:border-blue-500 focus:outline-none"
+                    />
+                  </label>
+
+                  <span className="hidden pb-3 text-2xl font-bold text-gray-400 sm:block">+</span>
+
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-bold text-gray-600">誤差</span>
+                    <input
+                      type="number"
+                      value={errorAdjustment}
+                      onChange={(e) => setErrorAdjustment(e.target.value === "" ? "" : Number(e.target.value))}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-center text-2xl font-bold focus:border-blue-500 focus:outline-none"
+                    />
+                  </label>
+
+                  <span className="hidden pb-3 text-2xl font-bold text-gray-400 sm:block">=</span>
+
+                  <div className="flex flex-col gap-2">
+                    <span className="text-sm font-bold text-gray-600">合計</span>
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-center">
+                      <span className="text-3xl font-bold text-blue-700">{totalCount}</span>
+                      <span className="ml-1 text-sm font-bold text-blue-700">個</span>
+                    </div>
+                  </div>
                 </div>
 
                 <button
@@ -219,3 +565,4 @@ export default function Home() {
     </main>
   );
 }
+
