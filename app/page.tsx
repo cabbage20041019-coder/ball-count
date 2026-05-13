@@ -8,14 +8,22 @@ interface HistoryItem {
   timestamp: string;
   imageUrl: string;
   count: number;
+  detectedCount?: number;
+  missedCount?: number;
+  falsePositiveCount?: number;
+  totalCount?: number;
 }
 
 interface SharedResultItem {
   id: string;
   count: number;
+  name?: string | null;
+  department?: string | null;
   time_text: string;
   created_at: string;
 }
+
+type Department = "男子部" | "女子部";
 
 interface SelectionBox {
   x: number;
@@ -125,6 +133,20 @@ const saveHistoryItems = (items: HistoryItem[]) => {
   throw new Error("履歴の保存容量が足りません");
 };
 
+const getHistoryCounts = (item: HistoryItem) => {
+  const detectedCount = item.detectedCount ?? item.count;
+  const missedCount = item.missedCount ?? 0;
+  const falsePositiveCount = item.falsePositiveCount ?? 0;
+  const totalCount = item.totalCount ?? item.count;
+
+  return {
+    detectedCount,
+    missedCount,
+    falsePositiveCount,
+    totalCount,
+  };
+};
+
 export default function Home() {
   const imageRef = useRef<HTMLImageElement | null>(null);
   const objectUrlRef = useRef<string>("");
@@ -137,6 +159,8 @@ export default function Home() {
   const [count, setCount] = useState<number | "">("");
   const [missedCount, setMissedCount] = useState<number | "">(0);
   const [falsePositiveCount, setFalsePositiveCount] = useState<number | "">(0);
+  const [shareName, setShareName] = useState("");
+  const [department, setDepartment] = useState<Department>("男子部");
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
@@ -153,7 +177,7 @@ export default function Home() {
 
     const { data, error } = await supabase
       .from("shared_results")
-      .select("id, count, time_text, created_at")
+      .select("id, count, name, department, time_text, created_at")
       .order("created_at", { ascending: false })
       .limit(20);
 
@@ -387,6 +411,12 @@ export default function Home() {
   const shareToSupabase = async () => {
     if (count === "") return;
 
+    const trimmedName = shareName.trim();
+    if (!trimmedName) {
+      alert("名前を入力してください。");
+      return;
+    }
+
     if (!supabase) {
       alert("Supabaseの設定がまだできていません。");
       return;
@@ -399,6 +429,8 @@ export default function Home() {
 
       const { error } = await supabase.from("shared_results").insert({
         count: totalCount,
+        name: trimmedName,
+        department,
         time_text: timestamp,
       });
 
@@ -424,6 +456,10 @@ export default function Home() {
         timestamp: new Date().toLocaleString("ja-JP"),
         imageUrl: await createHistoryImageUrl(processedImageUrl),
         count: totalCount,
+        detectedCount,
+        missedCount: missedBallCount,
+        falsePositiveCount: falseDetectionCount,
+        totalCount,
       };
 
       const savedHistory = saveHistoryItems([newItem, ...history]);
@@ -624,6 +660,36 @@ export default function Home() {
                   自分の履歴に保存する
                 </button>
 
+                <div className="w-full rounded-xl border bg-gray-50 p-4">
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-bold text-gray-600">名前</span>
+                    <input
+                      type="text"
+                      value={shareName}
+                      onChange={(e) => setShareName(e.target.value)}
+                      placeholder="名前を入力"
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-base focus:border-green-500 focus:outline-none"
+                    />
+                  </label>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {(["男子部", "女子部"] as Department[]).map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => setDepartment(option)}
+                        className={`rounded-lg border px-3 py-2 text-sm font-bold transition ${
+                          department === option
+                            ? "border-green-600 bg-green-600 text-white"
+                            : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <button
                   onClick={shareToSupabase}
                   disabled={isSharing}
@@ -657,7 +723,13 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {sharedResults.map((item) => (
               <div key={item.id} className="rounded-xl bg-white p-4 shadow border">
-                <p className="text-sm text-gray-500">{item.time_text}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-bold text-gray-900">{item.name || "名前未設定"}</p>
+                    <p className="text-sm text-gray-500">{item.department || "部門未設定"}</p>
+                  </div>
+                  <p className="text-right text-xs text-gray-500">{item.time_text}</p>
+                </div>
                 <p className="mt-2 text-right">
                   <span className="text-3xl font-bold text-green-700">
                     {item.count}
@@ -681,44 +753,62 @@ export default function Home() {
           </p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {history.map((item) => (
-              <div
-                key={item.id}
-                className="bg-white p-4 rounded-xl shadow border relative group"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-xs text-gray-400 font-mono">
-                    {item.timestamp}
-                  </span>
-                  <button
-                    onClick={() => deleteHistory(item.id)}
-                    className="text-red-400 hover:text-red-600 text-sm"
-                  >
-                    削除
-                  </button>
-                </div>
+            {history.map((item) => {
+              const itemCounts = getHistoryCounts(item);
 
-                <button
-                  type="button"
-                  onClick={() => setSelectedHistory(item)}
-                  className="mb-3 block w-full overflow-hidden rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                  aria-label={`${item.timestamp}の履歴画像を全体表示する`}
+              return (
+                <div
+                  key={item.id}
+                  className="bg-white p-4 rounded-xl shadow border relative group"
                 >
-                  <img
-                    src={item.imageUrl}
-                    alt="History"
-                    className="h-48 w-full object-cover transition duration-200 hover:scale-[1.02]"
-                  />
-                </button>
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-xs text-gray-400 font-mono">
+                      {item.timestamp}
+                    </span>
+                    <button
+                      onClick={() => deleteHistory(item.id)}
+                      className="text-red-400 hover:text-red-600 text-sm"
+                    >
+                      削除
+                    </button>
+                  </div>
 
-                <div className="text-right">
-                  <span className="text-xl font-bold text-blue-600">
-                    {item.count}
-                  </span>
-                  <span className="text-sm font-bold ml-1">個</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedHistory(item)}
+                    className="mb-3 block w-full overflow-hidden rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    aria-label={`${item.timestamp}の履歴画像を全体表示する`}
+                  >
+                    <img
+                      src={item.imageUrl}
+                      alt="History"
+                      className="h-48 w-full object-cover transition duration-200 hover:scale-[1.02]"
+                    />
+                  </button>
+
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="rounded-lg bg-gray-50 p-2">
+                      <p className="font-bold text-gray-500">検出数</p>
+                      <p className="text-right font-bold">{itemCounts.detectedCount}個</p>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 p-2">
+                      <p className="font-bold text-gray-500">未検出</p>
+                      <p className="text-right font-bold">{itemCounts.missedCount}個</p>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 p-2">
+                      <p className="font-bold text-gray-500">誤検出</p>
+                      <p className="text-right font-bold">{itemCounts.falsePositiveCount}個</p>
+                    </div>
+                    <div className="rounded-lg bg-blue-50 p-2">
+                      <p className="font-bold text-blue-700">合計値</p>
+                      <p className="text-right text-xl font-bold text-blue-700">
+                        {itemCounts.totalCount}個
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -737,7 +827,9 @@ export default function Home() {
             <div className="flex items-center justify-between gap-4 text-white">
               <div>
                 <p className="text-sm text-gray-300">{selectedHistory.timestamp}</p>
-                <p className="text-lg font-bold">{selectedHistory.count}個</p>
+                <p className="text-lg font-bold">
+                  合計 {getHistoryCounts(selectedHistory).totalCount}個
+                </p>
               </div>
 
               <button
@@ -754,6 +846,33 @@ export default function Home() {
               alt="Selected history"
               className="max-h-[calc(100vh-120px)] w-full rounded-lg object-contain"
             />
+
+            <div className="grid grid-cols-2 gap-2 rounded-lg bg-white p-3 text-sm text-gray-900 md:grid-cols-4">
+              <div className="rounded-lg bg-gray-50 p-2">
+                <p className="font-bold text-gray-500">検出数</p>
+                <p className="text-right font-bold">
+                  {getHistoryCounts(selectedHistory).detectedCount}個
+                </p>
+              </div>
+              <div className="rounded-lg bg-gray-50 p-2">
+                <p className="font-bold text-gray-500">未検出</p>
+                <p className="text-right font-bold">
+                  {getHistoryCounts(selectedHistory).missedCount}個
+                </p>
+              </div>
+              <div className="rounded-lg bg-gray-50 p-2">
+                <p className="font-bold text-gray-500">誤検出</p>
+                <p className="text-right font-bold">
+                  {getHistoryCounts(selectedHistory).falsePositiveCount}個
+                </p>
+              </div>
+              <div className="rounded-lg bg-blue-50 p-2">
+                <p className="font-bold text-blue-700">合計値</p>
+                <p className="text-right text-xl font-bold text-blue-700">
+                  {getHistoryCounts(selectedHistory).totalCount}個
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}
