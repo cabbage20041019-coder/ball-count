@@ -171,7 +171,7 @@ export default function Home() {
       .from("shared_results")
       .select("id, count, name, department, time_text, created_at")
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(50);
 
     if (error) {
       console.error("Shared results fetch error:", error);
@@ -712,24 +712,26 @@ export default function Home() {
             共有結果はまだありません。
           </p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {sharedResults.map((item) => (
-              <div key={item.id} className="rounded-xl bg-white p-4 shadow border">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-bold text-gray-900">{item.name || "名前未設定"}</p>
-                    <p className="text-sm text-gray-500">{item.department || "部門未設定"}</p>
+          <div className="max-h-[520px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {sharedResults.map((item) => (
+                <div key={item.id} className="rounded-xl bg-white p-4 shadow border">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-gray-900">{item.name || "名前未設定"}</p>
+                      <p className="text-sm text-gray-500">{item.department || "部門未設定"}</p>
+                    </div>
+                    <p className="text-right text-xs text-gray-500">{item.time_text}</p>
                   </div>
-                  <p className="text-right text-xs text-gray-500">{item.time_text}</p>
+                  <p className="mt-2 text-right">
+                    <span className="text-3xl font-bold text-green-700">
+                      {item.count}
+                    </span>
+                    <span className="ml-1 text-sm font-bold">個</span>
+                  </p>
                 </div>
-                <p className="mt-2 text-right">
-                  <span className="text-3xl font-bold text-green-700">
-                    {item.count}
-                  </span>
-                  <span className="ml-1 text-sm font-bold">個</span>
-                </p>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </div>
