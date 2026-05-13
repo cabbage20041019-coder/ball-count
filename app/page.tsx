@@ -16,6 +16,19 @@ interface SelectionBox {
   height: number;
 }
 
+interface ImageGuidance {
+  width: number;
+  height: number;
+  aspectRatio: number;
+  requiresSelection: boolean;
+  message: string;
+}
+
+interface SharedResult {
+  count: string;
+  time: string;
+}
+
 const PRODUCTION_API_URL = "https://ball-count-backend.onrender.com/count";
 const HISTORY_STORAGE_KEY = "ball_count_history";
 const MIN_SELECTION_SIZE = 12;
@@ -24,14 +37,6 @@ const MAX_RECOMMENDED_ASPECT_RATIO = 1.3;
 const MAX_HISTORY_ITEMS = 10;
 const HISTORY_IMAGE_MAX_SIZE = 900;
 const HISTORY_IMAGE_QUALITY = 0.75;
-
-interface ImageGuidance {
-  width: number;
-  height: number;
-  aspectRatio: number;
-  requiresSelection: boolean;
-  message: string;
-}
 
 const loadHistory = () => {
   const savedHistory = localStorage.getItem(HISTORY_STORAGE_KEY);
@@ -51,7 +56,8 @@ const getApiUrl = () => {
 
   if (
     typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    (window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1")
   ) {
     return "http://localhost:8000/count";
   }
@@ -66,10 +72,12 @@ const createHistoryImageUrl = (imageUrl: string) => {
     image.onload = () => {
       const scale = Math.min(
         1,
-        HISTORY_IMAGE_MAX_SIZE / Math.max(image.naturalWidth, image.naturalHeight),
+        HISTORY_IMAGE_MAX_SIZE / Math.max(image.naturalWidth, image.naturalHeight)
       );
+
       const width = Math.max(1, Math.round(image.naturalWidth * scale));
       const height = Math.max(1, Math.round(image.naturalHeight * scale));
+
       const canvas = document.createElement("canvas");
       const context = canvas.getContext("2d");
 
@@ -81,6 +89,7 @@ const createHistoryImageUrl = (imageUrl: string) => {
       canvas.width = width;
       canvas.height = height;
       context.drawImage(image, 0, 0, width, height);
+
       resolve(canvas.toDataURL("image/jpeg", HISTORY_IMAGE_QUALITY));
     };
 
@@ -116,13 +125,16 @@ export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState<string>("");
   const [processedImageUrl, setProcessedImageUrl] = useState<string>("");
-  const [count, setCount] = useState<number | "">(""); // 個数を数値で管理
+
+  const [count, setCount] = useState<number | "">("");
   const [errorAdjustment, setErrorAdjustment] = useState<number | "">(0);
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [selectedHistory, setSelectedHistory] = useState<HistoryItem | null>(null);
   const [selection, setSelection] = useState<SelectionBox | null>(null);
   const [imageGuidance, setImageGuidance] = useState<ImageGuidance | null>(null);
+  const [sharedResult, setSharedResult] = useState<SharedResult | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -130,6 +142,19 @@ export default function Home() {
     }, 0);
 
     return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sharedCount = params.get("count");
+    const sharedTime = params.get("time");
+
+    if (sharedCount && sharedTime) {
+      setSharedResult({
+        count: sharedCount,
+        time: sharedTime,
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -150,6 +175,7 @@ export default function Home() {
 
     const url = URL.createObjectURL(file);
     objectUrlRef.current = url;
+
     setSelectedFile(file);
     setImageUrl(url);
     setProcessedImageUrl("");
@@ -157,10 +183,13 @@ export default function Home() {
     setErrorAdjustment(0);
     setSelection(null);
     setImageGuidance(null);
+    setSharedResult(null);
 
     const previewImage = new Image();
+
     previewImage.onload = () => {
       const aspectRatio = previewImage.naturalWidth / previewImage.naturalHeight;
+
       const requiresSelection =
         aspectRatio < MIN_RECOMMENDED_ASPECT_RATIO ||
         aspectRatio > MAX_RECOMMENDED_ASPECT_RATIO;
@@ -175,6 +204,7 @@ export default function Home() {
           : "必要に応じてボールの範囲だけを選択できます。",
       });
     };
+
     previewImage.src = url;
   };
 
@@ -183,6 +213,7 @@ export default function Home() {
     if (!image) return null;
 
     const rect = image.getBoundingClientRect();
+
     const x = Math.min(Math.max(e.clientX - rect.left, 0), rect.width);
     const y = Math.min(Math.max(e.clientY - rect.top, 0), rect.height);
 
@@ -197,7 +228,13 @@ export default function Home() {
 
     e.currentTarget.setPointerCapture(e.pointerId);
     dragStartRef.current = point;
-    setSelection({ x: point.x, y: point.y, width: 0, height: 0 });
+
+    setSelection({
+      x: point.x,
+      y: point.y,
+      width: 0,
+      height: 0,
+    });
   };
 
   const handleSelectionMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -207,6 +244,7 @@ export default function Home() {
     if (!point) return;
 
     const start = dragStartRef.current;
+
     setSelection({
       x: Math.min(start.x, point.x),
       y: Math.min(start.y, point.y),
@@ -217,6 +255,7 @@ export default function Home() {
 
   const handleSelectionEnd = () => {
     dragStartRef.current = null;
+
     setSelection((current) => {
       if (
         !current ||
@@ -238,6 +277,7 @@ export default function Home() {
 
     const scaleX = image.naturalWidth / image.clientWidth;
     const scaleY = image.naturalHeight / image.clientHeight;
+
     const sourceX = Math.round(selection.x * scaleX);
     const sourceY = Math.round(selection.y * scaleY);
     const sourceWidth = Math.round(selection.width * scaleX);
@@ -259,20 +299,21 @@ export default function Home() {
       0,
       0,
       sourceWidth,
-      sourceHeight,
+      sourceHeight
     );
 
     return new Promise<Blob | File>((resolve) => {
       canvas.toBlob(
         (blob) => resolve(blob ?? selectedFile),
         selectedFile.type || "image/jpeg",
-        0.92,
+        0.92
       );
     });
   };
 
   const analyzeImage = async () => {
     if (!selectedFile) return;
+
     if (imageGuidance?.requiresSelection && !selection) {
       alert("この画像は範囲選択が必要です。ボールの範囲だけをドラッグで選択してください。");
       return;
@@ -296,6 +337,7 @@ export default function Home() {
       if (!res.ok) throw new Error("サーバーエラー");
 
       const data = await res.json();
+
       if (data.count !== undefined && data.processed_image) {
         setCount(data.count);
         setErrorAdjustment(0);
@@ -313,12 +355,35 @@ export default function Home() {
   };
 
   const requiresSelection = imageGuidance?.requiresSelection ?? false;
-  const canAnalyze = Boolean(selectedFile) && !isProcessing && (!requiresSelection || Boolean(selection));
+
+  const canAnalyze =
+    Boolean(selectedFile) &&
+    !isProcessing &&
+    (!requiresSelection || Boolean(selection));
+
   const detectedCount = count === "" ? 0 : Number(count);
   const adjustmentCount = errorAdjustment === "" ? 0 : Number(errorAdjustment);
   const totalCount = detectedCount + adjustmentCount;
 
-  // 履歴を保存する関数
+  const createShareLink = async () => {
+    if (count === "") return;
+
+    const timestamp = new Date().toLocaleString("ja-JP");
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("count", String(totalCount));
+    url.searchParams.set("time", timestamp);
+
+    const shareUrl = url.toString();
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      alert("共有リンクをコピーしました！");
+    } catch {
+      prompt("このリンクをコピーしてください", shareUrl);
+    }
+  };
+
   const saveToHistory = async () => {
     if (!processedImageUrl || count === "") return;
 
@@ -332,6 +397,7 @@ export default function Home() {
 
       const savedHistory = saveHistoryItems([newItem, ...history]);
       setHistory(savedHistory);
+
       alert("履歴に保存しました！");
     } catch (error) {
       console.error("History save error:", error);
@@ -339,9 +405,9 @@ export default function Home() {
     }
   };
 
-  // 履歴を削除する関数
   const deleteHistory = (id: string) => {
     const newHistory = history.filter((item) => item.id !== id);
+
     setHistory(newHistory);
     localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(newHistory));
   };
@@ -350,7 +416,14 @@ export default function Home() {
     <main className="min-h-screen p-8 bg-gray-100 text-gray-900 flex flex-col items-center">
       <h1 className="text-4xl font-bold mb-8">ボールカウント & 履歴保存</h1>
 
-      {/* メイン操作エリア */}
+      {sharedResult && (
+        <div className="mb-6 w-full max-w-2xl rounded-2xl border border-green-300 bg-green-50 p-4 text-green-900 shadow">
+          <p className="font-bold">共有された解析結果</p>
+          <p className="mt-1">個数: {sharedResult.count}個</p>
+          <p className="text-sm">時間: {sharedResult.time}</p>
+        </div>
+      )}
+
       <div className="w-full max-w-2xl bg-white p-6 rounded-2xl shadow-md mb-12">
         <input
           type="file"
@@ -359,7 +432,11 @@ export default function Home() {
           className="mb-6 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
         />
 
-        {isProcessing && <p className="text-center animate-pulse text-blue-600 font-bold">解析中...</p>}
+        {isProcessing && (
+          <p className="text-center animate-pulse text-blue-600 font-bold">
+            解析中...
+          </p>
+        )}
 
         {(imageUrl || processedImageUrl) && (
           <div className="flex flex-col items-center">
@@ -379,7 +456,9 @@ export default function Home() {
                     className="block max-h-[500px] max-w-full object-contain"
                     draggable={false}
                   />
+
                   <div className="pointer-events-none absolute inset-0 bg-black/15" />
+
                   {selection && (
                     <div
                       className="pointer-events-none absolute border-2 border-blue-500 bg-blue-500/15 shadow-[0_0_0_9999px_rgba(0,0,0,0.28)]"
@@ -419,9 +498,10 @@ export default function Home() {
                     {selection
                       ? "選択範囲を解析する"
                       : requiresSelection
-                        ? "範囲を選択してください"
-                        : "画像全体を解析する"}
+                      ? "範囲を選択してください"
+                      : "画像全体を解析する"}
                   </button>
+
                   {selection && (
                     <button
                       type="button"
@@ -446,34 +526,50 @@ export default function Home() {
               <div className="mt-6 w-full flex flex-col items-center gap-4">
                 <div className="grid w-full grid-cols-1 gap-3 rounded-xl border bg-gray-50 p-4 sm:grid-cols-[1fr_auto_1fr_auto_1fr] sm:items-end">
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-bold text-gray-600">検出ボール数</span>
+                    <span className="text-sm font-bold text-gray-600">
+                      検出ボール数
+                    </span>
                     <input
                       type="number"
                       value={count}
-                      onChange={(e) => setCount(e.target.value === "" ? "" : Number(e.target.value))}
+                      onChange={(e) =>
+                        setCount(e.target.value === "" ? "" : Number(e.target.value))
+                      }
                       className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-center text-2xl font-bold focus:border-blue-500 focus:outline-none"
                     />
                   </label>
 
-                  <span className="hidden pb-3 text-2xl font-bold text-gray-400 sm:block">+</span>
+                  <span className="hidden pb-3 text-2xl font-bold text-gray-400 sm:block">
+                    +
+                  </span>
 
                   <label className="flex flex-col gap-2">
                     <span className="text-sm font-bold text-gray-600">誤差</span>
                     <input
                       type="number"
                       value={errorAdjustment}
-                      onChange={(e) => setErrorAdjustment(e.target.value === "" ? "" : Number(e.target.value))}
+                      onChange={(e) =>
+                        setErrorAdjustment(
+                          e.target.value === "" ? "" : Number(e.target.value)
+                        )
+                      }
                       className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-center text-2xl font-bold focus:border-blue-500 focus:outline-none"
                     />
                   </label>
 
-                  <span className="hidden pb-3 text-2xl font-bold text-gray-400 sm:block">=</span>
+                  <span className="hidden pb-3 text-2xl font-bold text-gray-400 sm:block">
+                    =
+                  </span>
 
                   <div className="flex flex-col gap-2">
                     <span className="text-sm font-bold text-gray-600">合計</span>
                     <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-center">
-                      <span className="text-3xl font-bold text-blue-700">{totalCount}</span>
-                      <span className="ml-1 text-sm font-bold text-blue-700">個</span>
+                      <span className="text-3xl font-bold text-blue-700">
+                        {totalCount}
+                      </span>
+                      <span className="ml-1 text-sm font-bold text-blue-700">
+                        個
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -484,26 +580,39 @@ export default function Home() {
                 >
                   結果を履歴に保存する
                 </button>
+
+                <button
+                  onClick={createShareLink}
+                  className="w-full py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition shadow-lg"
+                >
+                  結果を共有リンクとしてコピーする
+                </button>
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* 履歴表示エリア */}
       <div className="w-full max-w-4xl">
         <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
           📊 保存された履歴 ({history.length}件)
         </h2>
-        
+
         {history.length === 0 ? (
-          <p className="text-gray-500 text-center py-10">履歴はまだありません。</p>
+          <p className="text-gray-500 text-center py-10">
+            履歴はまだありません。
+          </p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {history.map((item) => (
-              <div key={item.id} className="bg-white p-4 rounded-xl shadow border relative group">
+              <div
+                key={item.id}
+                className="bg-white p-4 rounded-xl shadow border relative group"
+              >
                 <div className="flex justify-between items-start mb-2">
-                  <span className="text-xs text-gray-400 font-mono">{item.timestamp}</span>
+                  <span className="text-xs text-gray-400 font-mono">
+                    {item.timestamp}
+                  </span>
                   <button
                     onClick={() => deleteHistory(item.id)}
                     className="text-red-400 hover:text-red-600 text-sm"
@@ -511,6 +620,7 @@ export default function Home() {
                     削除
                   </button>
                 </div>
+
                 <button
                   type="button"
                   onClick={() => setSelectedHistory(item)}
@@ -523,8 +633,11 @@ export default function Home() {
                     className="h-48 w-full object-cover transition duration-200 hover:scale-[1.02]"
                   />
                 </button>
+
                 <div className="text-right">
-                  <span className="text-xl font-bold text-blue-600">{item.count}</span>
+                  <span className="text-xl font-bold text-blue-600">
+                    {item.count}
+                  </span>
                   <span className="text-sm font-bold ml-1">個</span>
                 </div>
               </div>
@@ -540,12 +653,16 @@ export default function Home() {
           aria-modal="true"
           onClick={() => setSelectedHistory(null)}
         >
-          <div className="flex max-h-full w-full max-w-6xl flex-col gap-3" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="flex max-h-full w-full max-w-6xl flex-col gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between gap-4 text-white">
               <div>
                 <p className="text-sm text-gray-300">{selectedHistory.timestamp}</p>
                 <p className="text-lg font-bold">{selectedHistory.count}個</p>
               </div>
+
               <button
                 type="button"
                 onClick={() => setSelectedHistory(null)}
@@ -554,6 +671,7 @@ export default function Home() {
                 閉じる
               </button>
             </div>
+
             <img
               src={selectedHistory.imageUrl}
               alt="Selected history"
@@ -565,4 +683,3 @@ export default function Home() {
     </main>
   );
 }
-
