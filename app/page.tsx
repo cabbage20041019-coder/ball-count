@@ -742,67 +742,69 @@ export default function Home() {
         </h2>
 
         {history.length === 0 ? (
-          <p className="text-gray-500 text-center py-10">
+          <p className="text-gray-500 text-center py-10 bg-white rounded-xl shadow">
             履歴はまだありません。
           </p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {history.map((item) => {
-              const itemCounts = getHistoryCounts(item);
+          <div className="max-h-[620px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {history.map((item) => {
+                const itemCounts = getHistoryCounts(item);
 
-              return (
-                <div
-                  key={item.id}
-                  className="bg-white p-4 rounded-xl shadow border relative group"
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="text-xs text-gray-400 font-mono">
-                      {item.timestamp}
-                    </span>
-                    <button
-                      onClick={() => deleteHistory(item.id)}
-                      className="text-red-400 hover:text-red-600 text-sm"
-                    >
-                      削除
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedHistory(item)}
-                    className="mb-3 block w-full overflow-hidden rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                    aria-label={`${item.timestamp}の履歴画像を全体表示する`}
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-white p-4 rounded-xl shadow border relative group"
                   >
-                    <img
-                      src={item.imageUrl}
-                      alt="History"
-                      className="h-48 w-full object-cover transition duration-200 hover:scale-[1.02]"
-                    />
-                  </button>
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="text-xs text-gray-400 font-mono">
+                        {item.timestamp}
+                      </span>
+                      <button
+                        onClick={() => deleteHistory(item.id)}
+                        className="text-red-400 hover:text-red-600 text-sm"
+                      >
+                        削除
+                      </button>
+                    </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div className="rounded-lg bg-gray-50 p-2">
-                      <p className="font-bold text-gray-500">検出数</p>
-                      <p className="text-right font-bold">{itemCounts.detectedCount}個</p>
-                    </div>
-                    <div className="rounded-lg bg-gray-50 p-2">
-                      <p className="font-bold text-gray-500">未検出</p>
-                      <p className="text-right font-bold">{itemCounts.missedCount}個</p>
-                    </div>
-                    <div className="rounded-lg bg-gray-50 p-2">
-                      <p className="font-bold text-gray-500">誤検出</p>
-                      <p className="text-right font-bold">{itemCounts.falsePositiveCount}個</p>
-                    </div>
-                    <div className="rounded-lg bg-blue-50 p-2">
-                      <p className="font-bold text-blue-700">合計値</p>
-                      <p className="text-right text-xl font-bold text-blue-700">
-                        {itemCounts.totalCount}個
-                      </p>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedHistory(item)}
+                      className="mb-3 block w-full overflow-hidden rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                      aria-label={`${item.timestamp}の履歴画像を全体表示する`}
+                    >
+                      <img
+                        src={item.imageUrl}
+                        alt="History"
+                        className="h-48 w-full object-cover transition duration-200 hover:scale-[1.02]"
+                      />
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="rounded-lg bg-gray-50 p-2">
+                        <p className="font-bold text-gray-500">検出数</p>
+                        <p className="text-right font-bold">{itemCounts.detectedCount}個</p>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 p-2">
+                        <p className="font-bold text-gray-500">未検出</p>
+                        <p className="text-right font-bold">{itemCounts.missedCount}個</p>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 p-2">
+                        <p className="font-bold text-gray-500">誤検出</p>
+                        <p className="text-right font-bold">{itemCounts.falsePositiveCount}個</p>
+                      </div>
+                      <div className="rounded-lg bg-blue-50 p-2">
+                        <p className="font-bold text-blue-700">合計値</p>
+                        <p className="text-right text-xl font-bold text-blue-700">
+                          {itemCounts.totalCount}個
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
