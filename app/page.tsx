@@ -1,12 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 
 interface HistoryItem {
   id: string;
   timestamp: string;
   imageUrl: string;
   count: number;
+}
+
+interface SharedResultItem {
+  id: string;
+  count: number;
+  time_text: string;
+  created_at: string;
 }
 
 interface SelectionBox {
@@ -24,11 +32,6 @@ interface ImageGuidance {
   message: string;
 }
 
-interface SharedResult {
-  count: string;
-  time: string;
-}
-
 const PRODUCTION_API_URL = "https://ball-count-backend.onrender.com/count";
 const HISTORY_STORAGE_KEY = "ball_count_history";
 const MIN_SELECTION_SIZE = 12;
@@ -37,6 +40,11 @@ const MAX_RECOMMENDED_ASPECT_RATIO = 1.3;
 const MAX_HISTORY_ITEMS = 10;
 const HISTORY_IMAGE_MAX_SIZE = 900;
 const HISTORY_IMAGE_QUALITY = 0.75;
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "";
+const supabase =
+  supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 const loadHistory = () => {
   const savedHistory = localStorage.getItem(HISTORY_STORAGE_KEY);
@@ -130,32 +138,40 @@ export default function Home() {
   const [errorAdjustment, setErrorAdjustment] = useState<number | "">(0);
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [sharedResults, setSharedResults] = useState<SharedResultItem[]>([]);
   const [selectedHistory, setSelectedHistory] = useState<HistoryItem | null>(null);
+
   const [selection, setSelection] = useState<SelectionBox | null>(null);
   const [imageGuidance, setImageGuidance] = useState<ImageGuidance | null>(null);
-  const [sharedResult, setSharedResult] = useState<SharedResult | null>(null);
-  const [shareLink, setShareLink] = useState<string>("");
+
+  const fetchSharedResults = async () => {
+    if (!supabase) return;
+
+    const { data, error } = await supabase
+      .from("shared_results")
+      .select("id, count, time_text, created_at")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error("Shared results fetch error:", error);
+      return;
+    }
+
+    setSharedResults(data ?? []);
+  };
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setHistory(loadHistory());
     }, 0);
 
+    fetchSharedResults();
+
     return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const sharedCount = params.get("count");
-    const sharedTime = params.get("time");
-
-    if (sharedCount && sharedTime) {
-      setSharedResult({
-        count: sharedCount,
-        time: sharedTime,
-      });
-    }
   }, []);
 
   useEffect(() => {
@@ -184,8 +200,6 @@ export default function Home() {
     setErrorAdjustment(0);
     setSelection(null);
     setImageGuidance(null);
-    setSharedResult(null);
-    setShareLink("");
 
     const previewImage = new Image();
 
@@ -347,7 +361,6 @@ export default function Home() {
         setImageUrl("");
         setSelectedFile(null);
         setSelection(null);
-        setShareLink("");
       }
     } catch (error) {
       console.error("Error:", error);
@@ -368,24 +381,34 @@ export default function Home() {
   const adjustmentCount = errorAdjustment === "" ? 0 : Number(errorAdjustment);
   const totalCount = detectedCount + adjustmentCount;
 
-  const createShareLink = async () => {
+  const shareToSupabase = async () => {
     if (count === "") return;
 
-    const timestamp = new Date().toLocaleString("ja-JP");
+    if (!supabase) {
+      alert("Supabaseの設定がまだできていません。");
+      return;
+    }
 
-    const url = new URL("/share", window.location.origin);
-    url.searchParams.set("count", String(totalCount));
-    url.searchParams.set("time", timestamp);
-
-    const shareUrl = url.toString();
-
-    setShareLink(shareUrl);
+    setIsSharing(true);
 
     try {
-      await navigator.clipboard.writeText(shareUrl);
-      alert("共有リンクを作成してコピーしました！");
-    } catch {
-      alert("共有リンクを作成しました。画面内のリンクから開けます。");
+      const timestamp = new Date().toLocaleString("ja-JP");
+
+      const { error } = await supabase.from("shared_results").insert({
+        count: totalCount,
+        time_text: timestamp,
+      });
+
+      if (error) throw error;
+
+      await fetchSharedResults();
+
+      alert("みんなの共有結果に保存しました！");
+    } catch (error) {
+      console.error("Share error:", error);
+      alert("共有に失敗しました。Supabaseの設定を確認してください。");
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -420,14 +443,6 @@ export default function Home() {
   return (
     <main className="min-h-screen p-8 bg-gray-100 text-gray-900 flex flex-col items-center">
       <h1 className="text-4xl font-bold mb-8">ボールカウント & 履歴保存</h1>
-
-      {sharedResult && (
-        <div className="mb-6 w-full max-w-2xl rounded-2xl border border-green-300 bg-green-50 p-4 text-green-900 shadow">
-          <p className="font-bold">共有された解析結果</p>
-          <p className="mt-1">個数: {sharedResult.count}個</p>
-          <p className="text-sm">時間: {sharedResult.time}</p>
-        </div>
-      )}
 
       <div className="w-full max-w-2xl bg-white p-6 rounded-2xl shadow-md mb-12">
         <input
@@ -583,43 +598,58 @@ export default function Home() {
                   onClick={saveToHistory}
                   className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition shadow-lg"
                 >
-                  結果を履歴に保存する
+                  自分の履歴に保存する
                 </button>
 
                 <button
-                  onClick={createShareLink}
-                  className="w-full py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition shadow-lg"
+                  onClick={shareToSupabase}
+                  disabled={isSharing}
+                  className="w-full py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition shadow-lg disabled:bg-gray-400"
                 >
-                  共有リンクを作成する
+                  {isSharing ? "共有中..." : "みんなの共有結果に保存する"}
                 </button>
-
-                {shareLink && (
-                  <div className="w-full rounded-xl border border-green-300 bg-green-50 p-4 text-green-900">
-                    <p className="mb-2 font-bold">共有リンク</p>
-
-                    <a
-                      href={shareLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block break-all rounded-lg bg-white p-3 text-sm text-blue-700 underline"
-                    >
-                      {shareLink}
-                    </a>
-
-                    <p className="mt-2 text-xs text-green-800">
-                      このリンクを開くと、共有結果ページに飛べます。
-                    </p>
-                  </div>
-                )}
               </div>
             )}
           </div>
         )}
       </div>
 
+      <div className="w-full max-w-4xl mb-12">
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <h2 className="text-2xl font-bold">🌐 みんなの共有結果</h2>
+          <button
+            type="button"
+            onClick={fetchSharedResults}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold hover:bg-gray-50"
+          >
+            更新
+          </button>
+        </div>
+
+        {sharedResults.length === 0 ? (
+          <p className="text-gray-500 text-center py-10 bg-white rounded-xl shadow">
+            共有結果はまだありません。
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {sharedResults.map((item) => (
+              <div key={item.id} className="rounded-xl bg-white p-4 shadow border">
+                <p className="text-sm text-gray-500">{item.time_text}</p>
+                <p className="mt-2 text-right">
+                  <span className="text-3xl font-bold text-green-700">
+                    {item.count}
+                  </span>
+                  <span className="ml-1 text-sm font-bold">個</span>
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="w-full max-w-4xl">
         <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-          📊 保存された履歴 ({history.length}件)
+          📊 自分の保存履歴 ({history.length}件)
         </h2>
 
         {history.length === 0 ? (
