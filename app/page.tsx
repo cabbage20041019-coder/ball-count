@@ -135,7 +135,8 @@ export default function Home() {
   const [processedImageUrl, setProcessedImageUrl] = useState<string>("");
 
   const [count, setCount] = useState<number | "">("");
-  const [errorAdjustment, setErrorAdjustment] = useState<number | "">(0);
+  const [missedCount, setMissedCount] = useState<number | "">(0);
+  const [falsePositiveCount, setFalsePositiveCount] = useState<number | "">(0);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
@@ -167,9 +168,8 @@ export default function Home() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setHistory(loadHistory());
+      fetchSharedResults();
     }, 0);
-
-    fetchSharedResults();
 
     return () => window.clearTimeout(timer);
   }, []);
@@ -197,7 +197,8 @@ export default function Home() {
     setImageUrl(url);
     setProcessedImageUrl("");
     setCount("");
-    setErrorAdjustment(0);
+    setMissedCount(0);
+    setFalsePositiveCount(0);
     setSelection(null);
     setImageGuidance(null);
 
@@ -356,7 +357,8 @@ export default function Home() {
 
       if (data.count !== undefined && data.processed_image) {
         setCount(data.count);
-        setErrorAdjustment(0);
+        setMissedCount(0);
+        setFalsePositiveCount(0);
         setProcessedImageUrl(`data:image/jpeg;base64,${data.processed_image}`);
         setImageUrl("");
         setSelectedFile(null);
@@ -378,8 +380,9 @@ export default function Home() {
     (!requiresSelection || Boolean(selection));
 
   const detectedCount = count === "" ? 0 : Number(count);
-  const adjustmentCount = errorAdjustment === "" ? 0 : Number(errorAdjustment);
-  const totalCount = detectedCount + adjustmentCount;
+  const missedBallCount = missedCount === "" ? 0 : Number(missedCount);
+  const falseDetectionCount = falsePositiveCount === "" ? 0 : Number(falsePositiveCount);
+  const totalCount = detectedCount + missedBallCount - falseDetectionCount;
 
   const shareToSupabase = async () => {
     if (count === "") return;
@@ -544,7 +547,7 @@ export default function Home() {
 
             {processedImageUrl && (
               <div className="mt-6 w-full flex flex-col items-center gap-4">
-                <div className="grid w-full grid-cols-1 gap-3 rounded-xl border bg-gray-50 p-4 sm:grid-cols-[1fr_auto_1fr_auto_1fr] sm:items-end">
+                <div className="grid w-full grid-cols-1 gap-3 rounded-xl border bg-gray-50 p-4 sm:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] sm:items-end">
                   <label className="flex flex-col gap-2">
                     <span className="text-sm font-bold text-gray-600">
                       検出ボール数
@@ -564,13 +567,33 @@ export default function Home() {
                   </span>
 
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-bold text-gray-600">誤差</span>
+                    <span className="text-sm font-bold text-gray-600">未検出</span>
                     <input
                       type="number"
-                      value={errorAdjustment}
+                      min="0"
+                      value={missedCount}
                       onChange={(e) =>
-                        setErrorAdjustment(
-                          e.target.value === "" ? "" : Number(e.target.value)
+                        setMissedCount(
+                          e.target.value === "" ? "" : Math.max(0, Number(e.target.value))
+                        )
+                      }
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-center text-2xl font-bold focus:border-blue-500 focus:outline-none"
+                    />
+                  </label>
+
+                  <span className="hidden pb-3 text-2xl font-bold text-gray-400 sm:block">
+                    -
+                  </span>
+
+                  <label className="flex flex-col gap-2">
+                    <span className="text-sm font-bold text-gray-600">誤検出</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={falsePositiveCount}
+                      onChange={(e) =>
+                        setFalsePositiveCount(
+                          e.target.value === "" ? "" : Math.max(0, Number(e.target.value))
                         )
                       }
                       className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-center text-2xl font-bold focus:border-blue-500 focus:outline-none"
