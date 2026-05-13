@@ -135,6 +135,7 @@ export default function Home() {
   const [selection, setSelection] = useState<SelectionBox | null>(null);
   const [imageGuidance, setImageGuidance] = useState<ImageGuidance | null>(null);
   const [sharedResult, setSharedResult] = useState<SharedResult | null>(null);
+  const [shareLink, setShareLink] = useState<string>("");
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -184,6 +185,7 @@ export default function Home() {
     setSelection(null);
     setImageGuidance(null);
     setSharedResult(null);
+    setShareLink("");
 
     const previewImage = new Image();
 
@@ -345,6 +347,7 @@ export default function Home() {
         setImageUrl("");
         setSelectedFile(null);
         setSelection(null);
+        setShareLink("");
       }
     } catch (error) {
       console.error("Error:", error);
@@ -370,17 +373,19 @@ export default function Home() {
 
     const timestamp = new Date().toLocaleString("ja-JP");
 
-    const url = new URL(window.location.href);
+    const url = new URL("/share", window.location.origin);
     url.searchParams.set("count", String(totalCount));
     url.searchParams.set("time", timestamp);
 
     const shareUrl = url.toString();
 
+    setShareLink(shareUrl);
+
     try {
       await navigator.clipboard.writeText(shareUrl);
-      alert("共有リンクをコピーしました！");
+      alert("共有リンクを作成してコピーしました！");
     } catch {
-      prompt("このリンクをコピーしてください", shareUrl);
+      alert("共有リンクを作成しました。画面内のリンクから開けます。");
     }
   };
 
@@ -585,8 +590,27 @@ export default function Home() {
                   onClick={createShareLink}
                   className="w-full py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition shadow-lg"
                 >
-                  結果を共有リンクとしてコピーする
+                  共有リンクを作成する
                 </button>
+
+                {shareLink && (
+                  <div className="w-full rounded-xl border border-green-300 bg-green-50 p-4 text-green-900">
+                    <p className="mb-2 font-bold">共有リンク</p>
+
+                    <a
+                      href={shareLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block break-all rounded-lg bg-white p-3 text-sm text-blue-700 underline"
+                    >
+                      {shareLink}
+                    </a>
+
+                    <p className="mt-2 text-xs text-green-800">
+                      このリンクを開くと、共有結果ページに飛べます。
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
