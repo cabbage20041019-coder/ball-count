@@ -425,11 +425,18 @@ export default function Home() {
   };
 
   const requiresSelection = imageGuidance?.requiresSelection ?? false;
+  const selectionAspectRatio =
+    selection && selection.height > 0 ? selection.width / selection.height : null;
+  const isSelectionAspectRatioRecommended =
+    selectionAspectRatio === null ||
+    (selectionAspectRatio >= MIN_RECOMMENDED_ASPECT_RATIO &&
+      selectionAspectRatio <= MAX_RECOMMENDED_ASPECT_RATIO);
 
   const canAnalyze =
     Boolean(selectedFile) &&
     !isProcessing &&
-    (!requiresSelection || Boolean(selection));
+    (!requiresSelection || Boolean(selection)) &&
+    isSelectionAspectRatioRecommended;
 
   const detectedCount = count === "" ? 0 : Number(count);
   const missedBallCount = missedCount === "" ? 0 : Number(missedCount);
@@ -600,6 +607,27 @@ export default function Home() {
                   </div>
                 )}
 
+                {selectionAspectRatio !== null && (
+                  <div
+                    className={`mt-4 w-full rounded-xl border p-4 text-sm ${
+                      isSelectionAspectRatioRecommended
+                        ? "border-green-200 bg-green-50 text-green-900"
+                        : "border-red-200 bg-red-50 text-red-900"
+                    }`}
+                  >
+                    <p className="font-bold">
+                      選択範囲:
+                      {isSelectionAspectRatioRecommended
+                        ? " 解析しやすい形です"
+                        : " 縦横比を調整してください"}
+                    </p>
+                    <p className="mt-1">
+                      縦横比: {selectionAspectRatio.toFixed(2)} / 推奨:
+                      {MIN_RECOMMENDED_ASPECT_RATIO}〜{MAX_RECOMMENDED_ASPECT_RATIO}
+                    </p>
+                  </div>
+                )}
+
                 <div className="mt-4 flex w-full flex-col gap-3 sm:flex-row">
                   <button
                     type="button"
@@ -608,7 +636,9 @@ export default function Home() {
                     className="flex-1 rounded-xl bg-blue-600 px-4 py-3 font-bold text-white shadow-lg transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
                   >
                     {selection
-                      ? "選択範囲を解析する"
+                      ? isSelectionAspectRatioRecommended
+                        ? "選択範囲を解析する"
+                        : "選択範囲の形を調整してください"
                       : requiresSelection
                       ? "範囲を選択してください"
                       : "画像全体を解析する"}
