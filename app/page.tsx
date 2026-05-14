@@ -473,7 +473,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen p-8 bg-gray-100 text-gray-900 flex flex-col items-center">
-      <h1 className="text-4xl font-bold mb-8">ボールカウント & 履歴保存</h1>
+      <h1 className="text-4xl font-bold mb-8">ボールカウンター</h1>
 
       <div className="w-full max-w-2xl bg-white p-6 rounded-2xl shadow-md mb-12">
         <input
@@ -712,16 +712,18 @@ export default function Home() {
             共有結果はまだありません。
           </p>
         ) : (
-          <div className="max-h-[520px] overflow-y-auto pr-1">
+          <div className="max-h-[420px] overflow-y-auto pr-1">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {sharedResults.map((item) => (
                 <div key={item.id} className="rounded-xl bg-white p-4 shadow border">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-bold text-gray-900">{item.name || "名前未設定"}</p>
-                      <p className="text-sm text-gray-500">{item.department || "部門未設定"}</p>
+                      <p className="text-xs text-gray-500">{item.time_text}</p>
+                      <p className="mt-1 font-bold text-gray-900">{item.name || "名前未設定"}</p>
                     </div>
-                    <p className="text-right text-xs text-gray-500">{item.time_text}</p>
+                    <p className="shrink-0 rounded-full bg-green-50 px-3 py-1 text-sm font-bold text-green-700">
+                      {item.department || "部門未設定"}
+                    </p>
                   </div>
                   <p className="mt-2 text-right">
                     <span className="text-3xl font-bold text-green-700">
