@@ -47,6 +47,7 @@ const MIN_SELECTION_SIZE = 12;
 const MIN_RECOMMENDED_ASPECT_RATIO = 0.8;
 const MAX_RECOMMENDED_ASPECT_RATIO = 1.3;
 const MAX_HISTORY_ITEMS = 10;
+const MAX_SHARED_RESULTS = 10;
 const HISTORY_IMAGE_MAX_SIZE = 900;
 const HISTORY_IMAGE_QUALITY = 0.75;
 
@@ -175,7 +176,7 @@ export default function Home() {
       .from("shared_results")
       .select("id, count, name, department, time_text, created_at")
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(MAX_SHARED_RESULTS);
 
     if (error) {
       console.error("Shared results fetch error:", error);
@@ -183,6 +184,33 @@ export default function Home() {
     }
 
     setSharedResults(data ?? []);
+  };
+
+  const trimSharedResults = async () => {
+    if (!supabase) return;
+
+    const { data, error } = await supabase
+      .from("shared_results")
+      .select("id")
+      .order("created_at", { ascending: false })
+      .range(MAX_SHARED_RESULTS, 1000);
+
+    if (error) {
+      console.error("Shared results trim fetch error:", error);
+      return;
+    }
+
+    const oldIds = data?.map((item) => item.id) ?? [];
+    if (oldIds.length === 0) return;
+
+    const { error: deleteError } = await supabase
+      .from("shared_results")
+      .delete()
+      .in("id", oldIds);
+
+    if (deleteError) {
+      console.error("Shared results trim delete error:", deleteError);
+    }
   };
 
   useEffect(() => {
@@ -485,6 +513,7 @@ export default function Home() {
 
       if (error) throw error;
 
+      await trimSharedResults();
       await fetchSharedResults();
 
       alert("みんなの共有結果に保存しました！");
@@ -803,21 +832,21 @@ export default function Home() {
             共有結果はまだありません。
           </p>
         ) : (
-          <div className="max-h-[320px] overflow-y-auto pr-1">
+          <div className="max-h-[240px] overflow-y-auto pr-1">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {sharedResults.map((item) => (
-                <div key={item.id} className="rounded-xl bg-white p-4 shadow border">
+                <div key={item.id} className="rounded-xl bg-white p-3 shadow border">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-xs text-gray-500">{item.time_text}</p>
-                      <p className="mt-1 font-bold text-gray-900">{item.name || "名前未設定"}</p>
+                      <p className="text-sm font-bold text-gray-900">{item.time_text}</p>
+                      <p className="mt-1 text-xs text-gray-500">{item.name || "名前未設定"}</p>
                     </div>
                     <p className="shrink-0 rounded-full bg-green-50 px-3 py-1 text-sm font-bold text-green-700">
                       {item.department || "部門未設定"}
                     </p>
                   </div>
-                  <p className="mt-2 text-right">
-                    <span className="text-3xl font-bold text-green-700">
+                  <p className="mt-1 text-right">
+                    <span className="text-2xl font-bold text-green-700">
                       {item.count}
                     </span>
                     <span className="ml-1 text-sm font-bold">個</span>
