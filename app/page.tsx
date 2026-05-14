@@ -73,6 +73,16 @@ const getApiUrl = () => {
   return PRODUCTION_API_URL;
 };
 
+const warmUpBackend = () => {
+  fetch(getApiUrl(), {
+    method: "GET",
+    mode: "no-cors",
+    cache: "no-store",
+  }).catch((error) => {
+    console.info("Backend warm-up skipped:", error);
+  });
+};
+
 const createHistoryImageUrl = (imageUrl: string) => {
   return new Promise<string>((resolve, reject) => {
     const image = new Image();
@@ -185,6 +195,7 @@ export default function Home() {
     const timer = window.setTimeout(() => {
       setHistory(loadHistory());
       fetchSharedResults();
+      warmUpBackend();
     }, 0);
 
     return () => window.clearTimeout(timer);
