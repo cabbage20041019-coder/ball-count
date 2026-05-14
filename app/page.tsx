@@ -24,6 +24,7 @@ interface SharedResultItem {
 }
 
 type Department = "男子部" | "女子部";
+type BackendWarmupStatus = "idle" | "warming" | "ready" | "failed";
 
 interface SelectionBox {
   x: number;
@@ -71,16 +72,6 @@ const getApiUrl = () => {
   }
 
   return PRODUCTION_API_URL;
-};
-
-const warmUpBackend = () => {
-  fetch(getApiUrl(), {
-    method: "GET",
-    mode: "no-cors",
-    cache: "no-store",
-  }).catch((error) => {
-    console.info("Backend warm-up skipped:", error);
-  });
 };
 
 const createHistoryImageUrl = (imageUrl: string) => {
@@ -166,6 +157,9 @@ export default function Home() {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [backendWarmupStatus, setBackendWarmupStatus] =
+    useState<BackendWarmupStatus>("idle");
+  const [backendWarmupSeconds, setBackendWarmupSeconds] = useState(0);
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [sharedResults, setSharedResults] = useState<SharedResultItem[]>([]);
@@ -192,13 +186,44 @@ export default function Home() {
   };
 
   useEffect(() => {
+    let warmupInterval: number | undefined;
+
     const timer = window.setTimeout(() => {
       setHistory(loadHistory());
       fetchSharedResults();
-      warmUpBackend();
+      setBackendWarmupStatus("warming");
+      setBackendWarmupSeconds(0);
+
+      const startedAt = Date.now();
+      warmupInterval = window.setInterval(() => {
+        setBackendWarmupSeconds(Math.floor((Date.now() - startedAt) / 1000));
+      }, 1000);
+
+      fetch(getApiUrl(), {
+        method: "GET",
+        mode: "no-cors",
+        cache: "no-store",
+      })
+        .then(() => {
+          setBackendWarmupStatus("ready");
+        })
+        .catch((error) => {
+          console.info("Backend warm-up skipped:", error);
+          setBackendWarmupStatus("failed");
+        })
+        .finally(() => {
+          if (warmupInterval) {
+            window.clearInterval(warmupInterval);
+          }
+        });
     }, 0);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (warmupInterval) {
+        window.clearInterval(warmupInterval);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -410,6 +435,20 @@ export default function Home() {
   const missedBallCount = missedCount === "" ? 0 : Number(missedCount);
   const falseDetectionCount = falsePositiveCount === "" ? 0 : Number(falsePositiveCount);
   const totalCount = detectedCount + missedBallCount - falseDetectionCount;
+  const backendWarmupLabel =
+    backendWarmupStatus === "ready"
+      ? "Render 起動済み"
+      : backendWarmupStatus === "failed"
+      ? "Render 確認失敗"
+      : backendWarmupStatus === "warming"
+      ? "Render 起動確認中"
+      : "Render 待機中";
+  const backendWarmupClassName =
+    backendWarmupStatus === "ready"
+      ? "border-green-200 bg-green-50 text-green-700"
+      : backendWarmupStatus === "failed"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : "border-blue-200 bg-blue-50 text-blue-700";
 
   const shareToSupabase = async () => {
     if (count === "") return;
@@ -484,7 +523,18 @@ export default function Home() {
 
   return (
     <main className="min-h-screen p-8 bg-gray-100 text-gray-900 flex flex-col items-center">
-      <h1 className="text-4xl font-bold mb-8">ボールカウンター</h1>
+      <h1 className="text-4xl font-bold mb-3">ボールカウンター</h1>
+
+      <div
+        className={`mb-8 flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold ${backendWarmupClassName}`}
+      >
+        <span>{backendWarmupLabel}</span>
+        {backendWarmupStatus === "warming" && (
+          <span className="rounded-full bg-white/70 px-2 py-0.5">
+            {backendWarmupSeconds}秒
+          </span>
+        )}
+      </div>
 
       <div className="w-full max-w-2xl bg-white p-6 rounded-2xl shadow-md mb-12">
         <input
@@ -723,7 +773,7 @@ export default function Home() {
             共有結果はまだありません。
           </p>
         ) : (
-          <div className="max-h-[420px] overflow-y-auto pr-1">
+          <div className="max-h-[320px] overflow-y-auto pr-1">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {sharedResults.map((item) => (
                 <div key={item.id} className="rounded-xl bg-white p-4 shadow border">
